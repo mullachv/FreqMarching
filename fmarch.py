@@ -147,7 +147,7 @@ Nq = 40
 def freq_range():
     return np.arange(-Nq, Nq)
 
-def get_slice(theta):
+def get_slices(theta):
     k = freq_range()
     def m_(beta):
         '''
@@ -186,7 +186,27 @@ def make_e_matrix(dsc):
         i += 1
     return e_m
 
+def compute_fr_coeffs(E, M, freq=0):
+    '''
+    Approximate Fourier coefficients using frequency freq. This needs to be changed to capture
+    all frequencies [-freq, freq]
+
+    :param E: a complex matrix of 9x80 (8 polar discretizations of 2*pi, -40 to 40 of freq)
+    :param M: real matrix of 9x80 where each row corresponds to a slice at that angle.
+                each row contains value at each -40 to 40 frequency slots
+    :param freq:
+    :return: a vector of coefficients Cf, that is a least squares estimation of E * Cf = M
+    '''
+    #This needs adjustment
+    E = np.matrix(E)
+    T = np.matmul(E.getH(), E)
+    U = np.matmul(E.getH(), M[:, freq])
+    #print(E.shape, T.shape, U.shape)
+    return np.matmul(np.linalg.inv(T), U.transpose())
+
 ## Main ##
+
+#Ignore these for now#
 box = create_shape()
 #plot_shape(box)
 #dcn = decode_shape(box)
@@ -212,11 +232,14 @@ g_ = np.absolute(fft1D(ps))
 # print(f_[280:300])
 # print(g_[280:300])
 
+####### Following are relevant per Prof. Xu #######
 polar_discr = discretize_2pi()
-fslice = get_slice(polar_discr)
-a = fslice()
-#print (len(a))
-print(a.shape)
+fslice = get_slices(polar_discr)
+M = fslice()
+
+#9x80
+print(M.shape)
+
 #print(a[0])
 #print(a[-1])
 #print(a.shape)
@@ -224,8 +247,15 @@ print(a.shape)
 #plt.scatter(np.arange(a[-1].shape[-1]), a[-1])
 #plt.show()
 
+#Complex exponentials matrix for each multiple of the -Nq to Nq multiples of the discretized frequency
 E = make_e_matrix(polar_discr)
+
+#9x80
 print(E.shape)
 print(E[:, 0])
 print(E[:, -1])
+
+Cfs = compute_fr_coeffs(E, M, Nq)
+print(Cfs.shape)
+print(Cfs[0:5,0])
 
