@@ -145,12 +145,17 @@ def fft1D(data):
 
 Nq = 40
 def freq_range():
-    return np.arange(-Nq, Nq)
+    return np.arange(-Nq, Nq+1)
 
-def get_slices(theta):
-    k = freq_range()
-    def m_(beta):
-        '''
+def make_sample_generator():
+	"""
+	Returns the fourier coefficients of the transform sampled at 2*Nq+1 discretization points
+
+	:return:
+	"""
+	k = freq_range()
+	def TwoD_Fourier_Square(beta):
+		'''
         Polar coordinates sinc function for a rectangle
         sinc(r cos theta / 2 pi) 1/2 sinc(r cos theta/4 pi)
 
@@ -158,41 +163,58 @@ def get_slices(theta):
         :param theta:
         :return:
         '''
-        return np.sinc(k * np.cos(beta)/(2*np.pi)) * .5 * np.sinc(k * np.sin(beta)/(4.*np.pi))
+		return np.sinc(k * np.cos(beta)/(2*np.pi)) * .5 * np.sinc(k * np.sin(beta)/(4.*np.pi))
 
-    def M_():
-        return np.asarray([ m_(beta) for beta in theta ])
+	def samples(m):
+		al = [np.random.random_sample()*(2*np.pi) for _ in range(m)]
+		print(al)
+		#return np.asarray([TwoD_Fourier_Square(np.random.random_sample()*(2*np.pi)) for _ in range(m)])
+		return np.asarray([TwoD_Fourier_Square(i) for i in al])
 
-    return M_
+	return samples
 
 def discretize_2pi():
     factor = 8.
     c = 2*np.pi/factor
     r = 0
     d = []
-    while r <= 2*np.pi:
+    while r < 2*np.pi:
         d += r,
         r += c
     return d
 
-def make_e_matrix(dsc):
-    e_m = np.zeros((len(dsc), len(freq_range())), dtype=complex)
-    i = 0
-    for d in dsc:
-        e_r = []
-        for n in np.arange(-Nq, Nq):
-            e_r += np.exp(1.j * np.pi * d * n),
-        e_m[i, :] = e_r
-        i += 1
-    return e_m
+def make_slice_generator(alpha):
+	"""
+	Complex valued matrix of Fourier phases for each angle in array alpha, discretized at 2*Nq + 1
+	frequencies
+	:param alpha:
+	:return:
+	"""
+	def populate_em(alpha):
+		EMatrix = np.zeros((len(alpha), len(freq_range())), dtype=complex)
+		i = 0
+		for d in alpha:
+			e_r = []
+			for n in freq_range():
+				e_r += np.exp(1.j * 2. * np.pi * d * n),
+			EMatrix[i, :] = e_r
+			i += 1
+		return EMatrix
+
+	EMatrix = populate_em(alpha)
+
+	def get_vec_for_theta(theta):
+		return EMatrix[alpha.index(theta), :]
+
+	return get_vec_for_theta
 
 def compute_fr_coeffs(E, M, freq=0):
     '''
     Approximate Fourier coefficients using frequency freq. This needs to be changed to capture
     all frequencies [-freq, freq]
 
-    :param E: a complex matrix of 9x80 (8 polar discretizations of 2*pi, -40 to 40 of freq)
-    :param M: real matrix of 9x80 where each row corresponds to a slice at that angle.
+    :param E: a complex matrix of 8x80 (8 polar discretizations of 2*pi, -40 to 40 of freq)
+    :param M: real matrix of 8x80 where each row corresponds to a slice at that angle.
                 each row contains value at each -40 to 40 frequency slots
     :param freq:
     :return: a vector of coefficients Cf, that is a least squares estimation of E * Cf = M
@@ -204,28 +226,58 @@ def compute_fr_coeffs(E, M, freq=0):
     #print(E.shape, T.shape, U.shape)
     return np.matmul(np.linalg.inv(T), U.transpose())
 
+
+def slice(theta, slicer, F_):
+	"""
+	Returns S_theta[F_] as the slice of F_ at angle theta discretized at 2*Nq + 1 frequencies
+	:param theta:
+	:param F_:
+	:return:
+	"""
+	return np.dot(slicer(theta), F_)
+
+def min_slice(slicer, F_):
+	angles = discretize_2pi()
+	sl = [ np.absolute(slice(p, slicer, F_)) for p in angles ]
+	#print(sl)
+	return np.min(sl), np.argmin(sl), angles[np.argmin(sl)]
+
+def max_slice(slicer, F_):
+	angles = discretize_2pi()
+	sl = [ np.absolute(slice(p, slicer, F_)) for p in angles ]
+	#print(sl)
+	return np.max(sl), np.argmax(sl), angles[np.argmax(sl)]
+
+def min_dist_slice(slicer, F_):
+	angles = discretize_2pi()
+	sl = [ slice(p, slicer, F_) for p in angles ]
+	print(sl)
+	#dl = np.absolute(sl - F_)
+	#print(dl)
+	#return np.min(dl), np.argmin(dl), angles[np.argmin(dl)]
+
 ## Main ##
 
 #Ignore these for now#
-box = create_shape()
+#box = create_shape()
 #plot_shape(box)
 #dcn = decode_shape(box)
 
 #rotate
-rot = rott_shape(box, 1.2)
+#rot = rott_shape(box, 1.2)
 #plot_shape(rot)
 
 #Project
-ps = project_shape(rot)
+#ps = project_shape(rot)
 #ps = project_shape(rot)
 #print(ps.shape, ps[280:320])
 #plot_projection(ps)
 
 #projection of FFT of rotated
-f_ = project_shape(fft2D(rot))
+#f_ = project_shape(fft2D(rot))
 
 #FFT of projection of rotated
-g_ = np.absolute(fft1D(ps))
+#g_ = np.absolute(fft1D(ps))
 
 # print(f_.shape, g_.shape)
 # print (MX)
@@ -233,29 +285,28 @@ g_ = np.absolute(fft1D(ps))
 # print(g_[280:300])
 
 ####### Following are relevant per Prof. Xu #######
-polar_discr = discretize_2pi()
-fslice = get_slices(polar_discr)
-M = fslice()
+np.random.seed(7)
+#number of samples
+m = 10
+sample_gen = make_sample_generator()
+FourierSamples = sample_gen(m)
 
-#9x80
-print(M.shape)
-
-#print(a[0])
-#print(a[-1])
-#print(a.shape)
-#print(a)
-#plt.scatter(np.arange(a[-1].shape[-1]), a[-1])
-#plt.show()
-
+# plt.plot(FourierSamples[0])
+# plt.plot(FourierSamples[4])
+# plt.show()
 #Complex exponentials matrix for each multiple of the -Nq to Nq multiples of the discretized frequency
-E = make_e_matrix(polar_discr)
+polar_discr = discretize_2pi()
+slice_gen = make_slice_generator(polar_discr)
 
-#9x80
-print(E.shape)
-print(E[:, 0])
-print(E[:, -1])
+#81
+#print(slice_gen(np.pi / 4.).shape)
 
-Cfs = compute_fr_coeffs(E, M, Nq)
-print(Cfs.shape)
-print(Cfs[0:5,0])
+# Scalar
+#print (slice(np.pi / 4., slice_gen, FourierSamples[0]))
 
+#print(min_slice(slice_gen, FourierSamples[0]))
+#print(max_slice(slice_gen, FourierSamples[0]))
+
+print(min_slice(slice_gen, FourierSamples[1]))
+print(max_slice(slice_gen, FourierSamples[1]))
+print(min_dist_slice(slice_gen, FourierSamples[1]))
